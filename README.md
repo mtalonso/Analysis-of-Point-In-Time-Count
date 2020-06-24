@@ -13,3 +13,7 @@ The original data set, posted as an xlsx file on HUD's website, did not require 
 ## Analysis of Data Set
 
 This analysis will begin by examining the characteristics of the CoCs themselves to gain a rough understanding of how communities are designed. Next, an aggregated analysis of the PIT count results will be examined from a national, state, and community level to observed changes between 2018 and 2019, or to observe the amount of homelessness when compared to different communities/ regions.
+
+
+## R Markdown
+A R Markdown version of this report can be found at: https://rpubs.com/mtalonso/PITCOUNT
