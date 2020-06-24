@@ -1,0 +1,1016 @@
+---
+title: " Analysis of the 'Point In Time Count'"
+author: "Michael Alonso"
+date: "6/23/2020"
+output: 
+  html_document: 
+    theme: journal
+    code_folding: hide
+    highlight: tango
+    toc: true
+    toc_float:
+      collapsed: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r Library loading, include=FALSE}
+library(readxl)
+library(prob)
+library(sampling)
+library(tidyr)
+library(plotly)
+```
+
+## Introduction
+
+#### Background
+Every year, the Department of Housing and Urban Development (HUD) collects information from Continuum of Cares (CoC) that details the number of homeless people within the United States and within U.S. Territories (DC, Guam, Puerto Rico, Virgin Islands, and Northern Mariana Islands). The CoCs, which act as the lead agency within a region working to end homelessness, will collect this data numerous ways, most commonly by a physical survey count, observation count, or by extrapolation. This process is called the "Point in Time (PIT) Count" and occurs nation wide within the same time period.
+
+Additional details about how the CoC performs this count can be found here: https://www.hudexchange.info/resource/4036/point-in-time-count-methodology-guide/.
+
+#### Data Set 
+
+The original data set, posted as an xlsx file on HUD's website, did not require any modification. This data was uploaded into R by selecting the sheets and range of interest, which comprised of two sheets, each sheet had 9 of 80 columns selected for this report. After the file was read into R, a column was added to the data that assigned the two state abbreviation based off of the CoC code.
+
+```{r Reading in Data, echo=TRUE}
+# Reading in the file and creating two variables to separate the years. Only the range up to A1:I398 was used for this analysis.
+df <- "2007-2019_PIT_Counts_by_CoC.xlsx"
+df.2019 <- read_xlsx(df, sheet= "2019", col_names = TRUE, range = "A1:I398")
+df.2018 <- read_xlsx(df, sheet= "2018", col_names = TRUE, range = "A1:I397")
+
+# Creating New Column that Assigns the Proper State to CoC. This is performed for both 2019 and 2018 variables
+df.2019$`State` <- substring(
+  df.2019$`CoC Number`[1:length(df.2019$`CoC Number`)],1,2)
+
+df.2018$`State` <- substring(
+  df.2018$`CoC Number`[1:length(df.2018$`CoC Number`)],1,2)
+
+```
+
+## Analysis of Data Set
+
+This analysis will begin by examining the characteristics of the CoCs themselves to gain a rough understanding of how communities are designed. Next, an aggregated analysis of the PIT count results will be examined from a national, state, and community level to observed changes between 2018 and 2019, or to observe the amount of homelessness when compared to different communities/ regions.
+
+
+### CoC Distribution by State/Territory
+
+```{r CoC Count, echo=TRUE, fig.height=10, fig.width=16, warning=FALSE}
+# Graph Format
+par(mfrow=c(1,1))
+
+# Calculating frequency of CoC per state. First, required information is put into a data frame
+state.df <- data.frame(table(df.2019$State), table(df.2018$State))
+state.df$Var1.1 <- NULL
+colnames(state.df)<- c("State", "2019", "2018")
+
+# Begin plotting set up
+# Defining variables to substitute into plot_ly syntax
+x <- list(title = "States/Territory", 
+          tickfont = list(size = 7),
+          tickangle = 270)
+y <- list(title = "Frequency")
+m <- list(
+        l = 50,
+        r = 50,
+        b = 50,
+        t = 50,
+        pad = 4)
+
+# Barplot of number CoC per State for years 2019 and 2018
+plot_ly(state.df,
+        x = state.df$State,
+        y = state.df$`2018`,
+        type = 'bar',
+        name = '2018',
+        width = 800,
+        height = 400,
+        marker = list(color = "firebrick")) %>%
+        add_trace(y = state.df$`2019`,
+                  name = '2019',
+                  marker = list(color = "skyblue")) %>%
+        layout(yaxis = y,
+               xaxis = x,
+               title="Number of CoC Per State/Territory",
+               barmode = 'group',
+               autosize = F,
+               margin = m)
+
+```
+
+```{r Merge and Disolved CoC, eval=FALSE, include=FALSE}
+# This chunk was used to determine which CoCs were lost and which were created. This is not displayed to the console.
+coc.merger <- setdiff(df.2019$`CoC Number`, df.2018$`CoC Number`)
+coc.lost <- setdiff(df.2018$`CoC Number`, df.2019$`CoC Number`)
+coc.merger
+coc.lost
+```
+The number of CoCs remained fairly constant from 2018 to 2019, totaling 396 and 397, respectively. From the graph, two new CoCs were formed (NY-525 and CA-531) and one CoC desolved (AR-504). When comparing the frequencies, California, New York, and Florida have the most CoCs within the state, with California having the most at 44. 11 states held the minimum of having only one CoC.
+
+
+### CoC Category Type Distribution
+
+The CoC Category is a geographical descriptor for the region being served. There are four category types: Major Cities, Rural, Suburban, and Other Urban.
+
+```{r CoC Category, echo=TRUE, fig.height=10, fig.width=16}
+# Calculating frequency of CoC category for 2019
+category.freq.19 <- table(df.2019$`CoC Category`)
+
+# Calculating frequency of CoC category for 2018
+# The data set only had CoC category type for 2019. To get Category type for 2018, the intersection of CoC numbers were performed. This got rid of the two new CoCs that formed in 2019. After researching AR-504, it was determined it was a rural CoC.
+
+# Creating intersection and frequency table 
+category.2018 <- intersect(df.2019$`CoC Number`, df.2018$`CoC Number`) 
+category.freq.18 <- table(df.2019$`CoC Category`[df.2019$`CoC Number` 
+                                                 %in% category.2018])
+
+# Creating a data frame with the needed information
+category.df <- data.frame(category.freq.19, category.freq.18)
+category.df$Var1.1 <- NULL
+colnames(category.df) <- c("Category Type", "2019", "2018")
+
+# Converting data frame to matrix and adjusting rural CoC value
+category.matrix <- as.matrix(category.df[c("2018","2019")])
+category.matrix[3,1] <- category.matrix[3,1] + 1
+
+par(mfrow = c(1,2))
+
+# Plot frequencies for 2019 and 2018
+barplot(t(category.matrix),
+        col = c("indianred3","skyblue2"),
+        beside = TRUE,
+        names.arg = c("Major City", "Other Urban", "Rural", "Suburban"),
+        las = 1,
+        legend.text = TRUE,
+        cex.names = 1.5,
+        xlab = "Category Type",
+        ylab = "Frequency",
+        main = "CoC Category Distribution",
+        args.legend = list(x = "topleft"))
+
+# Plot of percentages of CoC Category type
+slice.labels <- c("Major City", "Other Urban", "Rural", "Suburban")
+slice.percents <- round(category.freq.19/sum(category.freq.19)*100)
+slice.labels <- paste(slice.labels, slice.percents)
+slice.labels <- paste(slice.labels, "%", sep="")
+
+pie(category.freq.19, 
+    labels = slice.labels,
+    col =  c("palegreen2","indianred3","skyblue2","gray"),
+    main = "Percent Category Type",
+    cex = 1)
+
+par(mfrow = c(1,1))
+
+```
+The most common type of CoC is the Suburban CoC, comprising of 43% of CoCs, and the least common type of CoC is the Major City CoC, comprising of 12% of CoCs. As to be expected, the change in CoC Category from 2018 to 2019 is minor, only reflecting a single increase in Rural CoCs. 
+
+### CoC Category Type by State/Territory
+
+```{r echo=TRUE, fig.height=10, fig.width=16}
+# Creating table of CoC Categories by State/Territory
+category.by.state <- table(df.2019$State, df.2019$`CoC Category`)
+
+# Graph of CoC Categories by State/Territory
+barplot(t(category.by.state),
+        col =  c("palegreen2","indianred3","skyblue2","gray"),
+        beside = TRUE,
+        legend.text = TRUE,
+        las = 2,
+        cex.names = 1,
+        xlab = "State/Territory",
+        ylab = "Frequency",
+        main = "CoC Category by State/Territory")
+```
+
+Examining the distribution of Category type, only 16 states have all four category types. With the Suburban category type comprising 43% of CoCs, Florida, California, and New Jersey have the most Suburban CoCs. New York, California, and Minnesota have the most Rural CoCs. California, Texas, and Florida have the most Major City CoCs. Lastly, California, North Carolina, and four other states have the most Other Urban CoC type. 
+
+### An Aggregate breakdown of Homelessness at a National Level
+In 2018, there were **552,830 homeless** on a given night. In 2019, there were **567,715 homeless** on a given night. From 2018 to 2019, the total number of homeless people on a given night increased by 14,885.
+
+Two broad categories when describing homelessness on a given night is "Sheltered" vs "Unsheltered". Sheltered homelessness would comprise of homeless individuals staying in Emergency Shelters (ES), Transitional Housing (TH), or in a Safe Haven (SH). Unsheltered homeless would comprise of homeless individuals that are staying in places not meant for habitation (i.e. streets, car, abandoned houses, etc).
+```{r National Percent Sheltered vs Unsheltered, echo=TRUE, fig.width=13, warning=FALSE}
+
+par(mfrow = c(1,2))
+
+# Preparing Pie chart labels and calculating percentages for 2018
+slice.labels <- c("Sheltered Homeless", "Unsheltered Homeless")
+percent.sheltered.18 <- round((sum(df.2018$`Sheltered Total Homeless, 2018`) /
+                                 sum(df.2018$`Overall Homeless, 2018`)) * 100, 2)
+percent.unsheltered.18 <- round((sum(df.2018$`Unsheltered Homeless, 2018`) /
+                                 sum(df.2018$`Overall Homeless, 2018`)) * 100, 2)
+slice.percents <- c(percent.sheltered.18, percent.unsheltered.18)
+slice.labels <- paste(slice.labels, slice.percents)
+slice.labels <- paste(slice.labels, "%", sep="")
+
+# Pie Chart displaying 2019 Sheltered and Unsheletered
+pie(slice.percents, 
+    labels = slice.labels,
+    col = c("lightblue","cadetblue"),
+    main = "2018",
+    cex = 1)
+
+# Preparing Pie chart labels and calculating percentages for 2019
+slice.labels <- c("Sheltered Homeless", "Unsheltered Homeless")
+percent.sheltered.19 <- round((sum(df.2019$`Sheltered Total Homeless, 2019`)/
+                                 sum(df.2019$`Overall Homeless, 2019`)) *
+                                100, 2)
+percent.unsheltered.19 <- round((sum(df.2019$`Unsheltered Homeless, 2019`) /
+                                 sum(df.2019$`Overall Homeless, 2019`)) *
+                                  100, 2)
+
+slice.percents <- c(percent.sheltered.19, percent.unsheltered.19)
+slice.labels <- paste(slice.labels, slice.percents)
+slice.labels <- paste(slice.labels, "%", sep="")
+
+# Pie Chart displaying 2019 Sheltered and Unsheltered
+pie(slice.percents, 
+    labels = slice.labels,
+    col = c("lightblue","cadetblue"),
+    main = "2019",
+    cex = 1)
+
+par(mfrow = c(1,1))
+
+```
+
+In 2018, the sheltered homeless population on a given night consisted of 64.82% of the total homeless population, compared to 62.78% for 2019. By looking at the number of sheltered and unsheltered homeless for each year, two factors become apparent.
+
+```{r Margin Table of Sheltered and Unsheltered, echo=TRUE}
+# Creating a margin table for visualizing sheltered and unsheltered homeless numbers
+# First step was to sum the total values for each type of homelessness in each CoC into one metric
+homeless.2019 <- c(sum(df.2019$`Sheltered Total Homeless, 2019`),
+                   sum(df.2019$`Unsheltered Homeless, 2019`))
+homeless.2018 <- c(sum(df.2018$`Sheltered Total Homeless, 2018`),
+                   sum(df.2018$`Unsheltered Homeless, 2018`))
+
+# Binding variables to make margin table
+x <- cbind(homeless.2018, homeless.2019)
+colnames(x) <- c(2018, 2019)
+rownames(x) <- c("Sheltered", "Unsheltered")
+addmargins(x)
+```
+
+The number of homeless people on a given night had increased by 14,885 individuals and the total amount of sheltered homeless decreased by 1,942 individuals. With such a significant increase in homeless persons nationwide, it's unexpected to see a decrease in the percent of people in shelter. To take a closer look at this decrease, the distribution of Sheltered Homelessness is examined.
+
+```{r Sheltered Homelessness, echo=TRUE, fig.width=13}
+par(mfrow = c(1,2))
+
+# Creating variables for total sheltered homeless by type
+sheltered.2019 <- c(sum(df.2019$`Sheltered ES Homeless, 2019`),
+                    sum(df.2019$`Sheltered TH Homeless, 2019`),
+                    sum(df.2019$`Sheltered SH Homeless, 2019`))
+sheltered.2018 <- c(sum(df.2018$`Sheltered ES Homeless, 2018`),
+                    sum(df.2018$`Sheltered TH Homeless, 2018`),
+                    sum(df.2018$`Sheltered SH Homeless, 2018`))
+
+# Preparing Pie chart labels and calculating percentages for 2018
+slice.labels <- c("Emergency Shelter", "Transitional Housing", "Safe Haven")
+percent.sheltered.18 <- round((sheltered.2018 /
+                                       sum(df.2018$`Sheltered Total Homeless, 2018`)) * 100, 2)
+slice.labels <- paste(slice.labels, percent.sheltered.18)
+slice.labels <- paste(slice.labels, "%", sep="")
+
+# Pie Chart displaying 2018 Sheltered
+pie(percent.sheltered.18, 
+    labels = slice.labels,
+    col = c("lightblue","cadetblue","darkblue"),
+    main = "Sheltered 2018",
+    cex = .8)
+
+# Preparing Pie chart labels and calculating percentages for 2019
+slice.labels <- c("Emergency Shelter", "Transitional Housing", "Safe Haven")
+percent.sheltered.19 <- round((sheltered.2019 /
+                                       sum(df.2019$`Sheltered Total Homeless, 2019`)) * 100, 2)
+slice.labels <- paste(slice.labels, percent.sheltered.19)
+slice.labels <- paste(slice.labels, "%", sep="")
+
+# Pie Chart displaying 2019 Sheltered
+pie(percent.sheltered.19, 
+    labels = slice.labels,
+    col = c("lightblue","cadetblue","darkblue"),
+    main = "Sheltered 2019",
+    cex = .8)
+par(mfrow = c(1,1))
+```
+
+From the graph, there was a 1.44% increase in people in emergency shelter and a 1.43% decrease in the percent of people in transitional housing on a given night. The percent of people in safe haven remained the same.
+
+```{r Margin Table showing distribution of Sheltered Homelessness, echo=TRUE}
+# Margin table showing amount of people in each type of sheltered situation by year
+x <- cbind(sheltered.2018, sheltered.2019)
+colnames(x) <- c(2018, 2019)
+rownames(x) <- c("Emergency Shelter", "Transitional Housing", "Safe Haven")
+addmargins(x)
+```
+
+Additional observations show that in 2019, more homeless individuals were taking shelter in emergency shelter and both transitional housing and safe haven had less on a given night.
+
+```{r Category type and homeless totals, echo=TRUE, fig.height=7, fig.width=12, message=FALSE, warning=FALSE}
+
+# Calculating Total Sheltered by Category Type
+df.2019 %>%
+        dplyr::group_by(`CoC Category`) %>%
+        dplyr::summarise(category.total = 
+                                 sum(`Sheltered Total Homeless, 2019`)) -> category.sheltered.total
+
+# Calculating Total Unsheltered by Category Type
+df.2019 %>%
+        dplyr::group_by(`CoC Category`) %>%
+        dplyr::summarise(category.total = 
+                                 sum(`Unsheltered Homeless, 2019` )) -> category.unsheltered.total
+
+# Creating table with Sheltered and Unsheltered Values for Category types
+category.homeless <- cbind(category.unsheltered.total$category.total,
+      category.sheltered.total$category.total)
+
+colnames(category.homeless) <- c("Unsheltered", "Sheltered")
+rownames(category.homeless) <- c("Major Cities", "Other Urban",
+                                 "Rural", "Suburban")
+
+# Barplot that shows the total amount homeless by category type with respect to sheltered and unshelterd totals
+options(scipen = 6)
+barplot(t(category.homeless),
+        col = c("lightblue", "cadetblue"),
+        xlab = "Category Type",
+        ylab = "Total Homeless",
+        main = "Homelessness by Category Type - 2019",
+        beside = FALSE,
+        legend.text = TRUE)
+
+addmargins(category.homeless)
+```
+
+When looking at homeless by category type at a national level, Major Cities comprise of the largest homeless population on a given night, with both sheltered and unsheltered homelessness being greater than any other CoC Type.
+
+Another interesting observation is formed by looking at the Rural CoC homeless metrics. On a given night, Rural CoCs will have less homeless than Major Cities or Suburban CoCs. However, Rural CoCs will have a roughly equal amount of unsheltered homeless as a Suburban CoC.
+
+
+### An Aggregate breakdown of Homelessness at a State/Territory Level
+
+
+```{r Total Homelessness by State/Territory, echo=TRUE, fig.height=10, fig.width=16, message=FALSE, warning=FALSE}
+# Getting sum of homeless and Grouping by state/Territory - 2019
+df.2019 %>%
+        dplyr::group_by(State) %>%
+        dplyr::summarise(state.total = sum(`Overall Homeless, 2019`)) -> state.total.19
+
+# Getting sum of homeless and Grouping by state/Territory - 2018
+df.2018 %>%
+        dplyr::group_by(State) %>%
+        dplyr::summarise(state.total = sum(`Overall Homeless, 2018`)) -> state.total.18
+
+# Calculating percent change from 2018 t0 2019
+percent.change <- ((state.total.19$state.total - state.total.18$state.total) /
+        state.total.18$state.total) * 100
+
+# Creating data frame with total homeless for both 2018 and 2019, state/Territory, and percent change
+state.df <- data.frame(Total.2018 = state.total.18$state.total, 
+                       Total.2019 = state.total.19$state.total,
+                       percent.change,
+                       State = state.total.18$State)
+
+# Calculating min states
+state.min.homeless <- sort(state.df$Total.2019)[1:5]
+state.min.homeless <- state.df$State[state.df$Total.2019 %in% state.min.homeless]
+
+# Defining fields that will be used in plot_ly graph
+x <- list(title = "State/ Territory", 
+          tickfont = list(size = 7),
+          tickangle = 270)
+y <- list(title = 'Total Homeless')
+m <- list(
+        l = 50,
+        r = 50,
+        b = 50,
+        t = 50,
+        pad = 4)
+
+# Grouped Barplot to show the Total Homeless per State/Territory
+plot_ly(state.df,
+        x = state.df$State,
+        y = state.df$Total.2018,
+        type = 'bar',
+        name = '2018',
+        width = 800,
+        height = 400, 
+        marker = list(color = "firebrick")) %>%
+        add_trace(y = state.df$Total.2019,
+                  name = '2019',
+                  marker = list(color = "skyblue")) %>%
+        layout(yaxis = y,
+               xaxis = x,
+               title="Total Homeless Per State/Territory",
+               barmode = 'group',
+               autosize = F,
+               margin = m)
+```
+
+Looking at the distribution of total homeless per state, California, New York, and Florida have the largest homeless populations on a given night. Recalling from above, these three states also have the most CoCs operating within their boundaries. The five locations with the least amount of homeless on a given night are Delaware, Guam, North Dakota, Virgin Islands, and Wyoming. 
+
+As well, looking at the differences in homelessness from 2018 to 2019, California appears to have the most significant increase.
+
+```{r Percent change in homelessness, echo=TRUE, fig.height=6, fig.width=16, message=FALSE, warning=FALSE}
+
+# Defining fields that will be used in plot_ly graph
+x <- list(title = "State/ Territory", 
+          tickfont = list(size = 7),
+          tickangle = 270)
+y <- list(title = "Percent Change")
+n = length(state.df$percent.change)
+m <- list(
+  l = 50,
+  r = 50,
+  b = 50,
+  t = 50,
+  pad = 4)
+
+# Barplot Graph displaying percent change in homelessness from 2018 to 2019
+plot_ly(x = state.df$State,
+        y = state.df$percent.change,
+        name = 'State/Territory',
+        type = 'bar',
+        width = 800,
+        height = 400,
+        marker = list(color = "cadetblue")) %>%
+        layout(title="Percent Change in Homeless",
+               xaxis = x, 
+               yaxis = y, 
+               autosize = F, 
+               margin = m)
+
+
+```
+However, when looking at the percent increase from 2018 to 2019, the Northern Mariana Islands (MP) has the highest percent gain of homelessness on any given night of 73.08%, followed by New Mexico with 27.05%. 
+
+The Virgin Islands had the biggest percent loss in homelessness on a given night from 2018 to 2019 with a 35.39% decrease, followed by Connecticut with 23.72% decrease.
+
+We can also see that 32 out of 55 States/Territories have had a percent decrease in homelessness.
+
+#### Distribution of Homelessness per State
+When looking at the descriptive statistics of total homeless at a state/territory level, five outliers become present. For states/territories in 2018, outliers would exist for any state that has more than 20,311 homeless on a given night. For states/territories in 2019, outliers would exist for any state that has more than 19,710 homeless on a given night.
+
+In both years, California, Florida, New York, Texas, and Washington were considered outliers.
+```{r Distribution of Homeless per State with and without outliars, echo=TRUE, fig.height=10, fig.width=16}
+par(mfrow = c(2,1))
+# Boxplot of total state homelessness with outliers
+boxplot(state.df$Total.2018, state.df$Total.2019,
+        horizontal = TRUE,
+        col = c("indianred3","skyblue2"),
+        xlab = "Number of Homeless",
+        names = as.character(c("2018", "2019")),
+        ylab = "Year",
+        main = "Homeless by State with Outliers")
+
+# Calculating Outlier point and collecting values within outlier points 2019
+total.state.19.f <- fivenum(state.df$Total.2019)
+
+# Collecting outlier boundries for 2019
+outlier.point.state19 <- c(total.state.19.f[4] + 1.5*(total.state.19.f[4] - 
+                                                        total.state.19.f[2]),
+                       total.state.19.f[2] - 1.5*(total.state.19.f[4] - 
+                                                    total.state.19.f[2]))
+
+# Collecting non outlier states for 2019
+non.outlier.state19 <- subset(state.df, state.df$Total.2019<=outlier.point.state19[1] & 
+                                  state.df$Total.2019>=outlier.point.state19[2])
+
+# Calculating Outlier point and collecting values within outlier points 2018
+total.state.18.f <- fivenum(state.df$Total.2018)
+
+# Collecting outlier boundries for 2018
+outlier.point.state18 <- c(total.state.18.f[4] + 1.5*(total.state.18.f[4] - 
+                                                        total.state.18.f[2]),
+                           total.state.18.f[2] - 1.5*(total.state.18.f[4] - 
+                                                        total.state.18.f[2]))
+
+# Collect non outlier states for 2018
+non.outlier.state18 <- subset(state.df, state.df$Total.2018<=outlier.point.state18[1] & 
+                                      state.df$Total.2018>=outlier.point.state18[2]) 
+
+# Boxplot of total state homelessness without outliers
+boxplot(non.outlier.state18$Total.2018, non.outlier.state19$Total.2019,
+        horizontal = TRUE,
+        col = c("indianred3","skyblue2"),
+        xlab = "Number of Homeless",
+        names = as.character(c("2018", "2019")),
+        ylab = "Year",
+        main = "Homeless by State without Outliers")
+
+# Determining Outlier State Names
+outlier.states.19 <- state.df$State[state.df$Total.2019 > outlier.point.state19[1]]
+outlier.states.18 <- state.df$State[state.df$Total.2018 > outlier.point.state18[1]]
+```
+
+When including the outliers, the median number of homeless on any given night per state in 2018 and 2019 were 3,933 and 4,079, respectively.
+
+When excluding the outliers, the median number of homeless on a given night per state in 2018 and 2019 were 3,561 and 3,251, respectively.
+
+```{r Descriptive statistic table, echo=TRUE}
+# Creating descriptive statistic variable for 2019 with outliers
+x<-cbind(
+mean(state.df$Total.2019),
+sd(state.df$Total.2019),
+median(state.df$Total.2019))
+colnames(x) <- c("Mean","SD", "Median")
+rownames(x) <- "2019 w/Outliers"
+
+# Creating descriptive statistic variable for 2018 with outliers
+y <- cbind(
+mean(state.df$Total.2018),
+sd(state.df$Total.2018),
+median(state.df$Total.2018))
+colnames(y) <- c("Mean","SD", "Median")
+rownames(y) <- "2018 w/Outliers"
+
+# Creating descriptive statistic variable for 2019 without outliers
+z <-cbind(
+        mean(non.outlier.state19$Total.2019),
+        sd(non.outlier.state19$Total.2019),
+        median(non.outlier.state19$Total.2019))
+colnames(z) <- c("Mean","SD", "Median")
+rownames(z) <- "2019 w/o Outliers"
+
+# Creating descriptive statistic variable for 2018 without outliers
+n <-cbind(
+        mean(non.outlier.state18$Total.2018),
+        sd(non.outlier.state18$Total.2018),
+        median(non.outlier.state18$Total.2018))
+colnames(n) <- c("Mean","SD", "Median")
+rownames(n) <- "2018 w/o Outliers"
+
+# Binding variables to make table
+descriptive.table <-rbind(n,y,z,x)
+
+# Displaying table
+descriptive.table
+```
+
+###  An Aggregate breakdown of Homelessness at a Community Level
+Looking at the top 50 CoCs in regards to having the most homeless individuals in 2019, two observations become apparent. First, NY-600 had the most homeless on a given night in 2019, and second, California had the most CoCs in the top 50.
+
+```{r Top 5 CoCs with the most homeless, echo=TRUE, fig.height=10, fig.width=16, warning=FALSE}
+# Collecting the names of the top 50 CoCs with the most homeless in 2019
+top.50.coc.names <- 
+        df.2019$`CoC Number`[df.2019$`Overall Homeless, 2019` %in%
+                                     sort(df.2019$`Overall Homeless, 2019`,
+                                          decreasing = TRUE)[1:50]]
+
+# Collecting the values of the top 50 CoCs with the most homeless in 2019
+top.50.coc.values <- 
+        df.2019$`Overall Homeless, 2019`[df.2019$`Overall Homeless, 2019` %in%
+                                     sort(df.2019$`Overall Homeless, 2019`,
+                                          decreasing = TRUE)[1:50]]
+
+# Compiling names and values of top 50 into a data frame
+top.50.coc.homeless <- data.frame(CoC.Name = top.50.coc.names,
+                                  Total.Homeless = top.50.coc.values)
+
+# Defining plot_ly components
+x <- list(title = "CoC Code",
+          tickfont = list(size = 7),
+          tickangle = 270)
+y <- list(title = "Total Homeless")
+m <- list(
+  l = 50,
+  r = 50,
+  b = 50,
+  t = 50,
+  pad = 4)
+
+# Barplot showing the top 50 CoCs with the Most Homeless
+plot_ly(x = top.50.coc.homeless$CoC.Name,
+        y = t(top.50.coc.homeless$Total.Homeless),
+        name = 'CoC',
+        type = 'bar',
+        width = 800,
+        height = 600,
+        marker = list(color = "cadetblue")) %>%
+        layout(title="Top 50 CoCs with Most Homeless",
+               xaxis = x, 
+               yaxis = y, 
+               autosize = F, 
+               margin = m)
+
+# Creating Display of Data frame of top 10 Community Names from the above top 50
+# Collecting CoC names
+name <- df.2019$`CoC Name`[df.2019$`Overall Homeless, 2019` %in% sort(top.50.coc.homeless$Total.Homeless, decreasing = TRUE)[1:10]]
+
+# Collecting Homeless total per top 10 CoC
+homeless <- df.2019$`Overall Homeless, 2019`[df.2019$`CoC Name` %in% name]
+
+# Collecting CoC Code from top 10
+code <- df.2019$`CoC Number`[df.2019$`CoC Name` %in% name]
+
+# Creating and ordering data frame with CoC names
+top.50.df <- data.frame(CoC = code,
+                       Name = name,
+                       Homeless = homeless)
+top.50.df[order(top.50.df$Homeless, decreasing = TRUE),]
+```
+
+When beginning to look at the distribution of homelessness at the community level, or the CoC level, there were 40 CoCs in 2018 and 36 CoCs in 2019 that were considered to be outliers. California had the most CoCs that fell in the outlier range. This would make about 72% of the previous top 50 outliers. 
+
+The outliers would be any CoC that had more than 2,552 and 2,746 homeless individuals for 2018 and 2019, respectively. 
+
+
+```{r Boxplot for CoC homeless distribution, echo=TRUE, fig.height=7, fig.width=16}
+# CoC Outlier Determinination for 2019
+total.coc.19.f<-fivenum(df.2019$`Overall Homeless, 2019`)
+
+# Finding outlier points for 2019
+outlier.point.coc.19 <- c(total.coc.19.f[4] + 1.5*(total.coc.19.f[4] - total.coc.19.f[2]),
+                       total.coc.19.f[2] - 1.5*(total.coc.19.f[4] - total.coc.19.f[2]))
+
+# Collecting CoCs that aren't outliers for 2019
+non.outlier.coc.19 <- subset(df.2019, df.2019$`Overall Homeless, 2019`<=
+                                     outlier.point.coc.19[1] & 
+                                     df.2019$`Overall Homeless, 2019`>=
+                                     outlier.point.coc.19[2])
+
+# Table showing how many CoCs per state are outliers 2019
+coc.table.19 <- table(df.2019$State[df.2019$`Overall Homeless, 2019`>
+                                            outlier.point.coc.19[1]])
+
+
+# CoC Outlier Determinination for 2018
+total.coc.18.f<-fivenum(df.2018$`Overall Homeless, 2018`)
+
+# Finding outlier points for 2018
+outlier.point.coc.18 <- c(total.coc.18.f[4] + 1.5*(total.coc.18.f[4] - total.coc.18.f[2]),
+                       total.coc.18.f[2] - 1.5*(total.coc.18.f[4] - total.coc.18.f[2]))
+
+# Collecting CoCs that aren't outliers for 2018
+non.outlier.coc.18 <- subset(df.2018, df.2018$`Overall Homeless, 2018`<=
+                                     outlier.point.coc.18[1] & 
+                                  df.2018$`Overall Homeless, 2018`>=
+                                     outlier.point.coc.18[2])
+
+# Table showing how many CoCs per state are outliers 2018
+coc.table.18 <- table(df.2018$State[df.2018$`Overall Homeless, 2018`> 
+                                            outlier.point.coc.18[1]])
+
+# To determine sum of CoC outliers
+# sum(coc.table.18)
+# sum(coc.table.19)
+
+
+# Boxplot showing the distribution of homeless at the CoC level
+boxplot(non.outlier.coc.18$`Overall Homeless, 2018`, 
+        non.outlier.coc.19$`Overall Homeless, 2019`,
+        horizontal = TRUE,
+        xlab = "Number of Homeless", col = c("indianred3","skyblue2"),
+        names = as.character(c("2018", "2019")),
+        main = "Total Homeless per CoC without Outliers")
+
+```
+
+When including the outliers, the median number of homeless on any given night per CoC in 2018 and 2019 were 564 and 530, respectively.
+
+When excluding the outliers, the median number of homeless on a given night per state in 2018 and 2019 were 478 and 471, respectively.
+
+
+```{r CoC Descriptive statistic table, echo=TRUE}
+# Creating descriptive statistic variable for 2019 CoC with outliers
+x<-cbind(
+        mean(df.2019$`Overall Homeless, 2019`),
+        sd(df.2019$`Overall Homeless, 2019`),
+        median(df.2019$`Overall Homeless, 2019`))
+colnames(x) <- c("Mean","SD", "Median")
+rownames(x) <- "2019 w/Outliers"
+
+# Creating descriptive statistic variable for 2018 with outliers
+y <- cbind(
+        mean(df.2018$`Overall Homeless, 2018`),
+        sd(df.2018$`Overall Homeless, 2018`),
+        median(df.2018$`Overall Homeless, 2018`))
+colnames(y) <- c("Mean","SD", "Median")
+rownames(y) <- "2018 w/Outliers"
+
+# Creating descriptive statistic variable for 2019 without outliers
+z <-cbind(
+        mean(non.outlier.coc.19$`Overall Homeless, 2019`),
+        sd(non.outlier.coc.19$`Overall Homeless, 2019`),
+        median(non.outlier.coc.19$`Overall Homeless, 2019`))
+colnames(z) <- c("Mean","SD", "Median")
+rownames(z) <- "2019 w/o Outliers"
+
+# Creating descriptive statistic variable for 2018 without outliers
+n <-cbind(
+        mean(non.outlier.coc.18$`Overall Homeless, 2018`),
+        sd(non.outlier.coc.18$`Overall Homeless, 2018`),
+        median(non.outlier.coc.18$`Overall Homeless, 2018`))
+colnames(n) <- c("Mean","SD", "Median")
+rownames(n) <- "2018 w/o Outliers"
+
+# Binding variables to make table
+descriptive.table <-rbind(n,y,z,x)
+
+# Displaying table
+descriptive.table
+```
+
+```{r Distribution of Homeless Histogram, echo=TRUE, fig.height=12, fig.width=20}
+par(mfrow = c(2,3), oma = c(0, 0, 2, 0))
+
+# Histogram of the Total Homeless at the CoC level in 2018. No outliers included from previous calculations
+
+hist(non.outlier.coc.18$`Overall Homeless, 2018`,
+     breaks = seq(0,3000,100),
+     ylim = c(0,200),
+     col = "indianred3",
+     xlab = "Number Homeless",
+     main = "Distribution of Homeless - 2018",
+     xaxt = 'n',
+     cex.lab = 1.5,
+     cex.axis = 1.5)
+axis(side = 1, at = seq(0,3000,300), 
+     labels = TRUE, cex.axis = 1.5)
+
+# Histogram of the Total Sheltered Homeless at the CoC level in 2018. No outliers included from previous calculations
+hist(non.outlier.coc.18$`Sheltered Total Homeless, 2018` ,
+     col = "indianred3",
+     xlab = "Number Homeless",
+     breaks = seq(0,3000,100),
+     ylim = c(0,200),
+     main = "Distribution of Sheltered Homeless - 2018",
+     xaxt = 'n',
+     cex.lab = 1.5,
+     cex.axis = 1.5)
+axis(side = 1, at = seq(0,3000,300), 
+     labels = TRUE, cex.axis = 1.5)
+
+# Histogram of the Total Unsheltered Homeless at the CoC level in 2018. No outliers included from previous calculations
+hist(non.outlier.coc.18$`Unsheltered Homeless, 2018`  ,
+     col = "indianred3",
+     xlab = "Number Homeless",
+     breaks = seq(0,3000,100),
+     ylim = c(0,200),
+     main = "Distribution of Unsheltered Homeless - 2018",
+     xaxt = 'n',
+     cex.lab = 1.5,
+     cex.axis = 1.5)
+axis(side = 1, at = seq(0,3000,300), 
+     labels = TRUE, cex.axis = 1.5)
+
+# Histogram of the Total Homeless at the CoC level in 2019. No outliers included from previous calculations
+hist(non.outlier.coc.19$`Overall Homeless, 2019`,
+     col = "skyblue2",
+     xlab = "Number Homeless",
+     breaks = seq(0,3000,100),
+     ylim = c(0,200),
+     main = "Distribution of Homeless - 2019",
+     xaxt = 'n',
+     cex.lab = 1.5,
+     cex.axis = 1.5)
+axis(side = 1, at = seq(0,3000,300), 
+     labels = TRUE, cex.axis = 1.5)
+
+# Histogram of the Total Sheltered Homeless at the CoC level in 2019. No outliers included from previous calculations
+hist(non.outlier.coc.19$`Sheltered Total Homeless, 2019`,
+     col = "skyblue2",
+     xlab = "Number Homeless",
+     breaks = seq(0,3000,100),
+     ylim = c(0,200),
+     main = "Distribution of Sheltered Homeless - 2019",
+     xaxt = 'n',
+     cex.lab = 1.5,
+     cex.axis = 1.5)
+axis(side = 1, at = seq(0,3000,300), 
+     labels = TRUE, cex.axis = 1.5)
+
+# Histogram of the Total Unsheltered Homeless at the CoC level in 2019. No outliers included from previous calculations
+hist(non.outlier.coc.19$`Unsheltered Homeless, 2019` ,
+     col = "skyblue2",
+     xlab = "Number Homeless",
+     ylim = c(0,200),
+     breaks = seq(0,3000,100),
+     main = "Distribution of Unsheltered Homeless - 2019",
+     xaxt = 'n',
+     cex.lab = 1.5,
+     cex.axis = 1.5)
+axis(side = 1, at = seq(0,3000,300), 
+     labels = TRUE, cex.axis = 1.5)
+
+
+par(mfrow = c(1,1))
+mtext("Distribution of Homeless at CoC Level without Outliers", outer = TRUE, cex = 1.5)
+
+```
+
+The distribution at the CoC level is skewed right for total homeless, total sheltered homeless, and total unsheltered homeless. While these histograms exclude the outliers, the shape does not change when the outliers are added back into the data. With the data skewing right, the mean would be to the right of the median.
+
+## Central Limit Theorem
+
+One of the ways the Central Limit Theorem applies to this data set can be found sampling total homeless at the CoC level for both 2018 and 2019. As can be seen below, the greater the sample size, the closer the distribution is to becoming normal. Since this data set has a strong skewed right distribution, we would expect to see a larger sample size needed before it begins to look normal.
+
+```{r Central Limit Theorem, echo=TRUE, fig.height=10, fig.width=16}
+par(mfrow = c(2,2), oma = c(0, 0, 2, 0))
+
+# Creating individual tibbles with total homeless values per CoC. This was done because each year had a different amount of CoCs. This will allow for the joining of tibbles and the assigning of NA for blank values.
+
+a <- tibble(rep(2019, nrow(df.2019)), df.2019)
+colnames(a) <- c("Year", "CoC", "Name", "Category", 
+                 "Overall Homeless",
+                 "Sheltered ES Homeless",
+                 "Sheltered TH Homeless",
+                 "Sheltered SH Homeless",
+                 "Sheltered Total Homeless",
+                 "Unsheltered Homeless",
+                 "State")
+
+b <- tibble(rep(2018, nrow(df.2018)), df.2018)
+colnames(b) <- c("Year", "CoC", "Name", 
+                 "Overall Homeless",
+                 "Sheltered ES Homeless",
+                 "Sheltered TH Homeless",
+                 "Sheltered SH Homeless",
+                 "Sheltered Total Homeless",
+                 "Unsheltered Homeless",
+                 "Individual Homeless",
+                 "State")
+
+# Joining the above tibbles together by CoC code.
+data.tibble <- dplyr::bind_rows(a, b)
+
+# Processing the above tibbles to drop the NA values and converting the tibble into a list. This will be used for gather samples of total homeless over the two years by CoC.
+
+x <- c(data.tibble$`Overall Homeless`)
+x <- as.list(drop_na(as_tibble(x)))
+
+# Setting up Sample boundries 
+samples <- 10000
+sample.size <- c(100, 200, 300, 400)
+xbar <- numeric(samples)
+xmean <- 0
+xsd <- 0
+
+# Collecting samples and plotting histograms for each sample size
+for (size in sample.size) {
+        for (i in 1:samples) {
+                xbar[i] <- mean(sample(x$value, size, replace = FALSE))
+        }
+        hist(xbar,
+             xlab = "Total Homeless",
+             main = c("Sample size of", size),
+             ylim = c(0, 3000),
+             xlim = c(500, 4000),
+             xaxt = 'n',
+             cex.lab = 1.5,
+             cex.axis = 1,
+             col = "cadetblue")
+        axis(side = 1, 
+             at = seq(500,4000,300),
+             labels = TRUE,
+             cex.axis = 1.5)
+        # Storing mean and standard deviation of samples for later display
+        xmean <- c(xmean, mean(xbar)) 
+        xsd <- c(xsd, sd(xbar))
+}
+
+par(mfrow = c(1,1))
+mtext("Total Homeless by CoC - Central Limit Theorem", outer = TRUE, cex = 1.5)
+
+# Creating variables to display the population and sample size mean and deviation
+sample.size <- c("Population", sample.size)
+xmean[1] <- mean(x$value)
+xsd[1] <- sd(x$value)
+
+# Pasting mean and standard deviations to console
+paste("Sample Size =", sample.size, " Mean =", round(xmean,2), " SD =", round(xsd,2))
+
+```
+
+When the sample size is at 100, the peak is around 1,100 homeless per CoC. Once the sample size is increased to 400, the peak is around 1,400 homeless per CoC. When comparing the mean and standard deviation of the population and the four samples, the 
+mean of the samples are reasonably close to the population mean of 1413.05. As the sample size increases, the standard deviation between the samples begin to decrease, indicating less variation within the sample.
+
+## Sampling Methods
+Three different sampling methods were performed on a sample size of 200 CoCs. Each sampling method was used for sampling the Total Homeless amount for each CoC. 
+
+* The three sampling methods used were:
+  + Systematic Sampling.
+  + Unequal Probability Sampling.
+  + Unequal Stratified Sampling. 
+  
+The Unequal Stratified Sampling was determined by the amount of CoCs per State.
+
+```{r Sampling Methods, echo=TRUE, fig.height=9, fig.width=14}
+
+par(mfrow=c(4,1), oma = c(0, 0, 2, 0))
+
+# Original Data Set
+original.f <- fivenum(data.tibble$`Overall Homeless`)
+boxplot(data.tibble$`Overall Homeless`,
+        horizontal = TRUE,
+        col = "cadetblue",
+        xlab = "Total Homeless",
+        main = "Population Data",
+        xaxt = "n",
+        yaxt = "n")
+axis(side = 1, at = original.f, labels = TRUE, las = 2)
+
+
+
+set.seed(12344)
+
+# Defining variables for sample
+n <- 200
+N <- length(x$value)
+k <- ceiling(N / n)
+r <- sample(k, 1)
+
+# Selecting sample by choosing every kth item
+s <- seq(r, by = k, length = n)
+
+# Collecting chosen sample rows
+systematic.sample <- x$value[s]
+systematic.f <- fivenum(systematic.sample)
+boxplot(systematic.sample,
+        horizontal = TRUE,
+        col = "cadetblue",
+        xlab = "Total Homeless",
+        main = "Systematic Sample",
+        xaxt = "n",
+        yaxt = "n")
+axis(side = 1, at = systematic.f, labels = TRUE, las = 2)
+
+# Unequal Probability
+set.seed(7943)
+
+# Defining variable for sampling
+n <- 200
+
+# Calculating inclusion probabilities
+pik <- inclusionprobabilities(x$value, n)
+
+# Selecting sample
+s <- UPsystematic(pik)
+
+# Collecting rows that were selected in sampling
+inclus.sample <- x$value[s != 0 ]
+
+inclus.sample.f <- fivenum(inclus.sample)
+boxplot(inclus.sample,
+        horizontal = TRUE,
+        col = "cadetblue",
+        xlab = "Total Homeless",
+        main = "Unequal Probability Sample",
+        xaxt = "n",
+        yaxt = "n")
+axis(side = 1, at = inclus.sample.f, labels = TRUE, las = 2)
+
+set.seed(7943)
+
+# Ordering data and assigning to new variable
+order.index <- order(data.tibble$State)
+data <- data.tibble[order.index, ]
+
+# Calculating Frequency of departments
+freq <- table(data$State)
+
+# Setting Strata variable
+sizes <- round(200 * freq / sum(freq))
+
+# Creating Strata
+st <- strata(data, stratanames = c("State"), size = sizes,
+             method = "srswor")
+
+# Getting data
+strata.sample <- getdata(data, st)
+
+# Boxplot
+strata.sample.f <- fivenum(strata.sample$`Overall Homeless`)
+
+boxplot(strata.sample$`Overall Homeless`,
+        horizontal = TRUE,
+        col= "cadetblue",
+        xlab = "Total Homeless",
+        main = "Stratified Sample",
+        xaxt = "n",
+        yaxt = "n")
+axis(side = 1, at = strata.sample.f, labels = TRUE, las = 2)
+
+par(mfrow = c(1,1))
+mtext("Total Homeless by CoC - Various Samples", outer = TRUE, cex = 1.5)
+
+summary.table <- cbind(summary(data.tibble$`Overall Homeless`),
+                       summary(systematic.sample)[1:6],
+                       summary(inclus.sample),
+                       summary(strata.sample$`Overall Homeless`))
+
+colnames(summary.table) <- c("Original",
+                             "Systematic", 
+                             "Unequal Prob", 
+                             "Strata")
+t(round(summary.table,2))
+```
+
+* Conclusions:
+  + Compared to the original data set, all three sampling methods had significantly less outliers, with the Unequal Probability Sample having the fewest outliers. 
+  + The original data set had the smallest median and IQR. 
+  + The Unequal Probability Sample had the largest mean, and the Strata Sample had the mean closest to the original data set.
+  + The Systematic Sample had the largest IQR. 
+
+Based on these sample methods, the Systematic Sample and the Stratified Sample appear to be the most representative of the population data. 
+
